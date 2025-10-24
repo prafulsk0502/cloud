@@ -1,0 +1,798 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Secure Chat - End-to-End Encryption</title>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/socket.io/4.7.2/socket.io.js"></script>
+    <script src="/static/crypto.js"></script>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            height: 100vh;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+        }
+
+        .container {
+            background: white;
+            border-radius: 20px;
+            box-shadow: 0 20px 40px rgba(0,0,0,0.1);
+            width: 90%;
+            max-width: 1200px;
+            height: 90vh;
+            display: flex;
+            overflow: hidden;
+        }
+
+        .sidebar {
+            width: 300px;
+            background: #f8f9fa;
+            border-right: 1px solid #e9ecef;
+            padding: 20px;
+            overflow-y: auto;
+        }
+
+        .main-content {
+            flex: 1;
+            display: flex;
+            flex-direction: column;
+        }
+
+        .login-section {
+            padding: 20px;
+            text-align: center;
+        }
+
+        .login-section h1 {
+            color: #333;
+            margin-bottom: 30px;
+            font-size: 2em;
+        }
+
+        .form-group {
+            margin-bottom: 20px;
+        }
+
+        .form-group label {
+            display: block;
+            margin-bottom: 5px;
+            color: #555;
+            font-weight: 500;
+        }
+
+        .form-group input, .form-group select {
+            width: 100%;
+            padding: 12px;
+            border: 2px solid #e9ecef;
+            border-radius: 8px;
+            font-size: 16px;
+            transition: border-color 0.3s;
+        }
+
+        .form-group input:focus, .form-group select:focus {
+            outline: none;
+            border-color: #667eea;
+        }
+
+        .btn {
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+            border: none;
+            padding: 12px 24px;
+            border-radius: 8px;
+            cursor: pointer;
+            font-size: 16px;
+            font-weight: 500;
+            transition: transform 0.2s;
+            width: 100%;
+        }
+
+        .btn:hover {
+            transform: translateY(-2px);
+        }
+
+        .btn:disabled {
+            opacity: 0.6;
+            cursor: not-allowed;
+            transform: none;
+        }
+
+        .chat-section {
+            display: none;
+            flex: 1;
+            flex-direction: column;
+        }
+
+        .chat-header {
+            background: #667eea;
+            color: white;
+            padding: 20px;
+            text-align: center;
+        }
+
+        .chat-header h2 {
+            margin-bottom: 5px;
+        }
+
+        .chat-header .status {
+            font-size: 14px;
+            opacity: 0.8;
+        }
+
+        .chat-messages {
+            flex: 1;
+            padding: 20px;
+            overflow-y: auto;
+            background: #f8f9fa;
+        }
+
+        .message {
+            margin-bottom: 15px;
+            padding: 12px 16px;
+            border-radius: 12px;
+            max-width: 70%;
+            word-wrap: break-word;
+        }
+
+        .message.sent {
+            background: #667eea;
+            color: white;
+            margin-left: auto;
+        }
+
+        .message.received {
+            background: white;
+            color: #333;
+            border: 1px solid #e9ecef;
+        }
+
+        .message-header {
+            font-size: 12px;
+            opacity: 0.7;
+            margin-bottom: 5px;
+        }
+
+        .message-content {
+            font-size: 16px;
+        }
+
+        .chat-input {
+            padding: 20px;
+            background: white;
+            border-top: 1px solid #e9ecef;
+            display: flex;
+            gap: 10px;
+        }
+
+        .chat-input input {
+            flex: 1;
+            padding: 12px;
+            border: 2px solid #e9ecef;
+            border-radius: 8px;
+            font-size: 16px;
+        }
+
+        .chat-input input:focus {
+            outline: none;
+            border-color: #667eea;
+        }
+
+        .chat-input button {
+            padding: 12px 20px;
+            background: #667eea;
+            color: white;
+            border: none;
+            border-radius: 8px;
+            cursor: pointer;
+            font-size: 16px;
+        }
+
+        .users-list {
+            margin-top: 20px;
+        }
+
+        .users-list h3 {
+            color: #333;
+            margin-bottom: 15px;
+        }
+
+        .user-item {
+            padding: 10px;
+            background: white;
+            border-radius: 8px;
+            margin-bottom: 10px;
+            cursor: pointer;
+            transition: background-color 0.2s;
+        }
+
+        .user-item:hover {
+            background: #e9ecef;
+        }
+
+        .user-item.selected {
+            background: #667eea;
+            color: white;
+        }
+
+        .status-indicator {
+            display: inline-block;
+            width: 8px;
+            height: 8px;
+            border-radius: 50%;
+            background: #28a745;
+            margin-right: 8px;
+        }
+
+        .alert {
+            padding: 12px;
+            border-radius: 8px;
+            margin-bottom: 20px;
+            font-size: 14px;
+        }
+
+        .alert-success {
+            background: #d4edda;
+            color: #155724;
+            border: 1px solid #c3e6cb;
+        }
+
+        .alert-error {
+            background: #f8d7da;
+            color: #721c24;
+            border: 1px solid #f5c6cb;
+        }
+
+        .encryption-status {
+            position: fixed;
+            top: 20px;
+            right: 20px;
+            background: #28a745;
+            color: white;
+            padding: 10px 15px;
+            border-radius: 8px;
+            font-size: 14px;
+            box-shadow: 0 4px 12px rgba(0,0,0,0.15);
+        }
+
+        .search-result {
+            padding: 10px;
+            background: white;
+            border-radius: 8px;
+            margin-bottom: 10px;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+        }
+
+        .search-result button {
+            padding: 5px 10px;
+            background: #28a745;
+            color: white;
+            border: none;
+            border-radius: 4px;
+            cursor: pointer;
+            font-size: 12px;
+        }
+
+        .search-result button:hover {
+            background: #218838;
+        }
+
+        .search-result button:disabled {
+            background: #6c757d;
+            cursor: not-allowed;
+        }
+
+        .friend-item {
+            padding: 10px;
+            background: white;
+            border-radius: 8px;
+            margin-bottom: 10px;
+            cursor: pointer;
+            transition: background-color 0.2s;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+        }
+
+        .friend-item:hover {
+            background: #e9ecef;
+        }
+
+        .friend-item.selected {
+            background: #667eea;
+            color: white;
+        }
+
+        .friend-name {
+            font-weight: 500;
+        }
+
+        .friend-status {
+            font-size: 12px;
+            opacity: 0.7;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <div class="sidebar">
+            <div class="login-section" id="loginSection">
+                <h1>🔒 Secure Chat</h1>
+                <p style="color: #666; margin-bottom: 30px;">End-to-End Encrypted Communication</p>
+                
+                <div class="form-group">
+                    <label for="username">Username</label>
+                    <input type="text" id="username" placeholder="Enter your username">
+                </div>
+                
+                <div class="form-group">
+                    <label for="password">Password</label>
+                    <input type="password" id="password" placeholder="Enter your password">
+                </div>
+                
+                <button class="btn" onclick="registerUser()">Register</button>
+                <button class="btn" onclick="loginUser()" style="margin-top: 10px;">Login</button>
+                
+                <div id="alertContainer"></div>
+            </div>
+
+            <div class="users-list" id="usersList" style="display: none;">
+                <h3>👥 Friends</h3>
+                <div id="friendsContainer"></div>
+                
+                <div style="margin-top: 20px;">
+                    <h3>🔍 Add Friends</h3>
+                    <div class="form-group">
+                        <input type="text" id="searchInput" placeholder="Search users by username..." onkeyup="searchUsers()">
+                    </div>
+                    <div id="searchResults"></div>
+                </div>
+                
+                <div style="margin-top: 20px;">
+                    <h3>💬 Start New Chat</h3>
+                    <div class="form-group">
+                        <label>Select friends to chat with:</label>
+                        <div id="participantsContainer"></div>
+                    </div>
+                    <button class="btn" onclick="startNewChat()" id="startChatBtn" disabled>Start Chat</button>
+                </div>
+            </div>
+        </div>
+
+        <div class="main-content">
+            <div class="chat-section" id="chatSection">
+                <div class="chat-header">
+                    <h2 id="chatTitle">Secure Chat</h2>
+                    <div class="status" id="chatStatus">End-to-End Encrypted</div>
+                </div>
+                
+                <div class="chat-messages" id="chatMessages">
+                    <div style="text-align: center; color: #666; margin-top: 50px;">
+                        <h3>🔐 Messages are encrypted</h3>
+                        <p>Only you and the recipient can read these messages</p>
+                    </div>
+                </div>
+                
+                <div class="chat-input">
+                    <input type="text" id="messageInput" placeholder="Type your encrypted message..." disabled>
+                    <button onclick="sendMessage()" id="sendBtn" disabled>Send</button>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <div class="encryption-status" id="encryptionStatus">
+        🔒 Encryption Active
+    </div>
+
+    <script>
+        // Global variables
+        let socket;
+        let currentUser = null;
+        let currentChatId = null;
+        let clientCrypto = new ClientCrypto();
+        let publicKey = null;
+        let friends = [];
+        let selectedParticipants = [];
+        let searchResults = [];
+
+        // Initialize socket connection
+        async function initSocket() {
+            socket = io();
+            
+            socket.on('connect', function() {
+                console.log('Connected to server');
+            });
+
+            socket.on('disconnect', function() {
+                console.log('Disconnected from server');
+                showAlert('Disconnected from server', 'error');
+            });
+
+            socket.on('login_response', async function(data) {
+                if (data.success) {
+                    currentUser = data.username;
+                    showAlert('Logged in successfully!', 'success');
+                    
+                    loadFriends();
+                    showChatInterface();
+                } else {
+                    showAlert(data.message, 'error');
+                }
+            });
+
+            socket.on('public_key_response', function(data) {
+                if (data.success) {
+                    publicKey = data.public_key;
+                    console.log('Public key received');
+                }
+            });
+
+            socket.on('aes_key', async function(data) {
+                console.log('AES key received for chat:', data.chat_id);
+                try {
+                    // Import AES key directly (simplified approach)
+                    await clientCrypto.importAESKey(data.aes_key);
+                    currentChatId = data.chat_id;
+                    console.log('AES key imported successfully');
+                    
+                    // Join the chat room
+                    console.log('Joining chat room:', data.chat_id);
+                    socket.emit('join_chat', { chat_id: data.chat_id });
+                } catch (error) {
+                    console.error('Failed to import AES key:', error);
+                    showAlert('Failed to import chat key', 'error');
+                }
+            });
+
+            socket.on('chat_started', function(data) {
+                console.log('Chat started:', data.chat_id);
+                currentChatId = data.chat_id;
+                showAlert('Chat started with ' + data.participants.join(', '), 'success');
+            });
+
+            socket.on('joined_chat', function(data) {
+                console.log('Joined chat:', data.chat_id);
+                updateChatStatus('Connected to chat');
+                document.getElementById('messageInput').disabled = false;
+                document.getElementById('sendBtn').disabled = false;
+            });
+
+            socket.on('message_received', async function(data) {
+                console.log('Message received:', data);
+                try {
+                    const decryptedMessage = await clientCrypto.decryptMessage(data.encrypted_message);
+                    displayMessage(data.username, decryptedMessage, data.timestamp, data.username !== currentUser);
+                } catch (error) {
+                    console.error('Failed to decrypt message:', error);
+                    displayMessage(data.username, '[Encrypted Message - Decryption Failed]', data.timestamp, data.username !== currentUser);
+                }
+            });
+
+            socket.on('chat_history', async function(data) {
+                console.log('Chat history received:', data);
+                await loadChatHistory(data.messages);
+            });
+
+            socket.on('chat_error', function(data) {
+                showAlert(data.message, 'error');
+            });
+        }
+
+        // User management
+        function registerUser() {
+            const username = document.getElementById('username').value.trim();
+            const password = document.getElementById('password').value;
+            
+            if (!username) {
+                showAlert('Please enter a username', 'error');
+                return;
+            }
+            
+            if (!password) {
+                showAlert('Please enter a password', 'error');
+                return;
+            }
+
+            fetch('/register', {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                },
+                body: JSON.stringify({ username: username, password: password })
+            })
+            .then(response => response.json())
+            .then(data => {
+                if (data.success) {
+                    showAlert('Registration successful! You can now login.', 'success');
+                } else {
+                    showAlert(data.message, 'error');
+                }
+            })
+            .catch(error => {
+                console.error('Registration error:', error);
+                showAlert('Registration failed', 'error');
+            });
+        }
+
+        function loginUser() {
+            const username = document.getElementById('username').value.trim();
+            const password = document.getElementById('password').value;
+            
+            if (!username) {
+                showAlert('Please enter a username', 'error');
+                return;
+            }
+            
+            if (!password) {
+                showAlert('Please enter a password', 'error');
+                return;
+            }
+
+            socket.emit('login', { username: username, password: password });
+        }
+
+        function loadFriends() {
+            fetch(`/friends/${currentUser}`)
+            .then(response => response.json())
+            .then(data => {
+                friends = data.friends;
+                displayFriends();
+            })
+            .catch(error => {
+                console.error('Failed to load friends:', error);
+            });
+        }
+
+        function displayFriends() {
+            const container = document.getElementById('friendsContainer');
+            const participantsContainer = document.getElementById('participantsContainer');
+            
+            container.innerHTML = '';
+            participantsContainer.innerHTML = '';
+
+            if (friends.length === 0) {
+                container.innerHTML = '<p style="color: #666; text-align: center;">No friends yet. Search for users to add friends!</p>';
+                return;
+            }
+
+            friends.forEach(friend => {
+                // Friends list
+                const friendItem = document.createElement('div');
+                friendItem.className = 'friend-item';
+                friendItem.innerHTML = `
+                    <div>
+                        <div class="friend-name">${friend}</div>
+                        <div class="friend-status">Online</div>
+                    </div>
+                `;
+                container.appendChild(friendItem);
+
+                // Participants selection
+                const participantItem = document.createElement('div');
+                participantItem.style.marginBottom = '10px';
+                participantItem.innerHTML = `
+                    <label style="display: flex; align-items: center; cursor: pointer;">
+                        <input type="checkbox" value="${friend}" onchange="toggleParticipant('${friend}')" style="margin-right: 8px;">
+                        ${friend}
+                    </label>
+                `;
+                participantsContainer.appendChild(participantItem);
+            });
+        }
+
+        function searchUsers() {
+            const query = document.getElementById('searchInput').value.trim();
+            if (query.length < 2) {
+                document.getElementById('searchResults').innerHTML = '';
+                return;
+            }
+
+            fetch('/search_users', {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                },
+                body: JSON.stringify({ query: query, exclude_user: currentUser })
+            })
+            .then(response => response.json())
+            .then(data => {
+                searchResults = data.users;
+                displaySearchResults();
+            })
+            .catch(error => {
+                console.error('Failed to search users:', error);
+            });
+        }
+
+        function displaySearchResults() {
+            const container = document.getElementById('searchResults');
+            container.innerHTML = '';
+
+            if (searchResults.length === 0) {
+                container.innerHTML = '<p style="color: #666; text-align: center;">No users found</p>';
+                return;
+            }
+
+            searchResults.forEach(user => {
+                const isFriend = friends.includes(user);
+                const resultItem = document.createElement('div');
+                resultItem.className = 'search-result';
+                resultItem.innerHTML = `
+                    <div>
+                        <div class="friend-name">${user}</div>
+                    </div>
+                    <button onclick="addFriend('${user}')" ${isFriend ? 'disabled' : ''}>
+                        ${isFriend ? 'Added' : 'Add Friend'}
+                    </button>
+                `;
+                container.appendChild(resultItem);
+            });
+        }
+
+        function addFriend(friendUsername) {
+            fetch('/add_friend', {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                },
+                body: JSON.stringify({ username: currentUser, friend_username: friendUsername })
+            })
+            .then(response => response.json())
+            .then(data => {
+                if (data.success) {
+                    showAlert(data.message, 'success');
+                    loadFriends();
+                    searchUsers(); // Refresh search results
+                } else {
+                    showAlert(data.message, 'error');
+                }
+            })
+            .catch(error => {
+                console.error('Failed to add friend:', error);
+                showAlert('Failed to add friend', 'error');
+            });
+        }
+
+        function toggleParticipant(username) {
+            const checkbox = event.target;
+            if (checkbox.checked) {
+                selectedParticipants.push(username);
+            } else {
+                selectedParticipants = selectedParticipants.filter(p => p !== username);
+            }
+            
+            document.getElementById('startChatBtn').disabled = selectedParticipants.length === 0;
+        }
+
+        function startNewChat() {
+            if (selectedParticipants.length === 0) {
+                showAlert('Please select at least one friend', 'error');
+                return;
+            }
+
+            console.log('Starting chat with participants:', selectedParticipants);
+            console.log('Current user:', currentUser);
+            
+            // Don't include currentUser here - server will add it automatically
+            socket.emit('start_chat', { participants: selectedParticipants });
+        }
+
+        // Chat functions
+        function joinChat(chatId) {
+            socket.emit('join_chat', { chat_id: chatId });
+        }
+
+        async function sendMessage() {
+            const messageInput = document.getElementById('messageInput');
+            const message = messageInput.value.trim();
+            
+            if (!message || !currentChatId) {
+                return;
+            }
+
+            try {
+                const encryptedMessage = await clientCrypto.encryptMessage(message);
+                socket.emit('send_message', {
+                    chat_id: currentChatId,
+                    encrypted_message: encryptedMessage
+                });
+                
+                messageInput.value = '';
+            } catch (error) {
+                console.error('Failed to encrypt message:', error);
+                showAlert('Failed to encrypt message', 'error');
+            }
+        }
+
+        function displayMessage(username, message, timestamp, isReceived) {
+            const messagesContainer = document.getElementById('chatMessages');
+            
+            // Clear welcome message if it exists
+            const welcomeMsg = messagesContainer.querySelector('div[style*="text-align: center"]');
+            if (welcomeMsg) {
+                welcomeMsg.remove();
+            }
+
+            const messageDiv = document.createElement('div');
+            messageDiv.className = `message ${isReceived ? 'received' : 'sent'}`;
+            
+            const time = new Date(timestamp).toLocaleTimeString();
+            
+            messageDiv.innerHTML = `
+                <div class="message-header">${username} • ${time}</div>
+                <div class="message-content">${message}</div>
+            `;
+            
+            messagesContainer.appendChild(messageDiv);
+            messagesContainer.scrollTop = messagesContainer.scrollHeight;
+        }
+
+        async function loadChatHistory(messages) {
+            const messagesContainer = document.getElementById('chatMessages');
+            messagesContainer.innerHTML = '';
+
+            for (const msg of messages) {
+                try {
+                    const decryptedMessage = await clientCrypto.decryptMessage(msg.encrypted_message);
+                    displayMessage(msg.username, decryptedMessage, msg.timestamp, msg.username !== currentUser);
+                } catch (error) {
+                    console.error('Failed to decrypt message:', error);
+                    displayMessage(msg.username, '[Encrypted Message - Decryption Failed]', msg.timestamp, msg.username !== currentUser);
+                }
+            }
+        }
+
+        // Initialize the application
+        document.addEventListener('DOMContentLoaded', async function() {
+            await initSocket();
+        });
+
+        function updateChatStatus(status) {
+            document.getElementById('chatStatus').textContent = status;
+        }
+
+        function showChatInterface() {
+            document.getElementById('loginSection').style.display = 'none';
+            document.getElementById('usersList').style.display = 'block';
+            document.getElementById('chatSection').style.display = 'flex';
+        }
+
+        function showAlert(message, type) {
+            const container = document.getElementById('alertContainer');
+            const alert = document.createElement('div');
+            alert.className = `alert alert-${type}`;
+            alert.textContent = message;
+            
+            container.innerHTML = '';
+            container.appendChild(alert);
+            
+            setTimeout(() => {
+                alert.remove();
+            }, 5000);
+        }
+
+        // Event listeners
+        document.getElementById('messageInput').addEventListener('keypress', function(e) {
+            if (e.key === 'Enter') {
+                sendMessage();
+            }
+        });
+
+        // Initialize the application
+        document.addEventListener('DOMContentLoaded', function() {
+            initSocket();
+        });
+    </script>
+</body>
+</html>
